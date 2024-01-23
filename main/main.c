@@ -82,7 +82,7 @@ const static char *TAG = "FALL_DETECTION:";
 #define ACCEL_THRESHOLD						0.3
 
 
-SemaphoreHandle_t xButtonSemaphore;
+//SemaphoreHandle_t xButtonSemaphore;
 
 
 
@@ -177,35 +177,34 @@ void mpu6050_mag_read(double *magfx, double *magfy, double *magfz){
     *magfz = *magfz*0.1;
 }
 
-void button_isr_handler(void* arg) {
-	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-
-    // Notify the task that the button was pressed
-    xSemaphoreGiveFromISR(xButtonSemaphore, &xHigherPriorityTaskWoken);
-
-    if (xHigherPriorityTaskWoken == pdTRUE) {
-        portYIELD_FROM_ISR();
-    }
-}
-
-
-//adding a random comment 
-
-void configure_button(){
-	gpio_config_t io_conf = {
-        .pin_bit_mask = (1ULL << BUTTON_PIN),
-        .mode = GPIO_MODE_INPUT,
-        .intr_type = GPIO_INTR_ANYEDGE,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
-    };
-    gpio_config(&io_conf);
-
-    // Install ISR Service with default configuration
-    gpio_install_isr_service(0);
-
-    // Hook ISR handler for specific GPIO pin
-    gpio_isr_handler_add(BUTTON_PIN, button_isr_handler, (void*) BUTTON_PIN);
-}
+//void button_isr_handler(void* arg) {
+//	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+//
+//    // Notify the task that the button was pressed
+//    xSemaphoreGiveFromISR(xButtonSemaphore, &xHigherPriorityTaskWoken);
+//
+//    if (xHigherPriorityTaskWoken == pdTRUE) {
+//        portYIELD_FROM_ISR();
+//    }
+//}
+//
+//
+//
+//void configure_button(){
+//	gpio_config_t io_conf = {
+//        .pin_bit_mask = (1ULL << BUTTON_PIN),
+//        .mode = GPIO_MODE_INPUT,
+//        .intr_type = GPIO_INTR_ANYEDGE,
+//        .pull_up_en = GPIO_PULLUP_ENABLE,
+//    };
+//    gpio_config(&io_conf);
+//
+//    // Install ISR Service with default configuration
+//    gpio_install_isr_service(0);
+//
+//    // Hook ISR handler for specific GPIO pin
+//    gpio_isr_handler_add(BUTTON_PIN, button_isr_handler, (void*) BUTTON_PIN);
+//}
 
 void app_main(void)
 {
@@ -241,17 +240,17 @@ void app_main(void)
 	int16_t step_accely;
 	int16_t step_accelz;
 
-	// Create a semaphore to notify the task when the button is pressed
-    xButtonSemaphore = xSemaphoreCreateBinary();
+	//// Create a semaphore to notify the task when the button is pressed
+   //xButtonSemaphore = xSemaphoreCreateBinary();
 
-	// Configure the button and set up the ISR
-    configure_button();
+	//// Configure the button and set up the ISR
+   //configure_button();
 
-	// Create a task to handle the button press
-    xTaskCreate(&button_task, "button_task", configMINIMAL_STACK_SIZE, NULL, TASK_PRIORITY, NULL);
+	//// Create a task to handle the button press
+   //xTaskCreate(&button_task, "button_task", configMINIMAL_STACK_SIZE, NULL, TASK_PRIORITY, NULL);
 
-    // Start the FreeRTOS scheduler
-    vTaskStartScheduler();
+   //// Start the FreeRTOS scheduler
+   //vTaskStartScheduler();
 
 	
     ESP_ERROR_CHECK(i2c_master_init());
