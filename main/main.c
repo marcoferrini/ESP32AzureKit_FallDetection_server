@@ -30,12 +30,9 @@
 const static char *TAG = "FALL_DETECTION:";
 
 //Button parameters
-#define BUTTON 						0			//TODO: change this button is the  parameter to switch the display page it is not involved with the button task
-#define BUTTON_PIN					0
-#define BUTTON_TASK_PRIORITY		3
-
-
-#define FALL_DETECTION_TASK_PRIORITY	4
+#define BUTTON 						0
+#define BUTTON_PIN	GPIO_NUM_2
+#define TASK_PRIORITY				5
 
 
 //i2c parameters 
@@ -85,11 +82,9 @@ const static char *TAG = "FALL_DETECTION:";
 #define ACCEL_THRESHOLD						0.3
 
 
-SemaphoreHandle_t xButtonSemaphore;
-SemaphoreHandle_t xMutex; //Mutex to handle the shared variable reset_accel don't know if it is necessary because one task read and the others write
+//SemaphoreHandle_t xButtonSemaphore;
 
 
-int reset_accel = 1;
 
 static esp_err_t mpu6050_register_read(uint8_t reg_addr, uint8_t *data, size_t len)
 {
@@ -137,32 +132,28 @@ static esp_err_t i2c_master_init(void)
     return i2c_driver_install(i2c_master_port, conf.mode, 0, 0, 0);
 }
 
+
+
 //ACCELERATION reading function
-void mpu6050_accel_read(double *accelx, double *accely, double *accelz, int reset) {
+void mpu6050_accel_read(double *accelx, double *accely, double *accelz) {
 	uint8_t data[2];
     data[0] = 0;
     data[1] = 0;
 	int16_t accel_aux;
 
-	if(reset){
-		ESP_ERROR_CHECK(mpu6050_register_read(MPU6050_ACCEL_XOUT, data, 2));
-		accel_aux = (((data[0] <<8)) | data[1]);
-		*accelx = accel_aux;
-		*accelx = *accelx/16384;  //to get the acceleration in gs 
-		ESP_ERROR_CHECK(mpu6050_register_read(MPU6050_ACCEL_YOUT, data, 2));
-		accel_aux = (((data[0] <<8)) | data[1]);
-		*accely = accel_aux;
-		*accely = *accely/16384;
-		ESP_ERROR_CHECK(mpu6050_register_read(MPU6050_ACCEL_ZOUT, data, 2));
-		accel_aux = (((data[0] <<8)) | data[1]);
-		*accelz = accel_aux; 
-		*accelz = *accelz/16384; 
-	} else {
-		*accelx = 0; 
-		*accely = 0;
-		*accelz = 0; 
-	}
-	
+
+	ESP_ERROR_CHECK(mpu6050_register_read(MPU6050_ACCEL_XOUT, data, 2));
+	accel_aux = (((data[0] <<8)) | data[1]);
+	*accelx = accel_aux;
+	*accelx = *accelx/16384;  //to get the acceleration in gs 
+	ESP_ERROR_CHECK(mpu6050_register_read(MPU6050_ACCEL_YOUT, data, 2));
+	accel_aux = (((data[0] <<8)) | data[1]);
+	*accely = accel_aux;
+	*accely = *accely/16384;
+	ESP_ERROR_CHECK(mpu6050_register_read(MPU6050_ACCEL_ZOUT, data, 2));
+	accel_aux = (((data[0] <<8)) | data[1]);
+	*accelz = accel_aux; 
+	*accelz = *accelz/16384; 
 }
 
 void mpu6050_mag_read(double *magfx, double *magfy, double *magfz){
@@ -186,52 +177,37 @@ void mpu6050_mag_read(double *magfx, double *magfy, double *magfz){
     *magfz = *magfz*0.1;
 }
 
-void IRAM_ATTR button_isr_handler(void* arg) {
-	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+//void button_isr_handler(void* arg) {
+//	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+//
+//    // Notify the task that the button was pressed
+//    xSemaphoreGiveFromISR(xButtonSemaphore, &xHigherPriorityTaskWoken);
+//
+//    if (xHigherPriorityTaskWoken == pdTRUE) {
+//        portYIELD_FROM_ISR();
+//    }
+//}
+//
+//
+//
+//void configure_button(){
+//	gpio_config_t io_conf = {
+//        .pin_bit_mask = (1ULL << BUTTON_PIN),
+//        .mode = GPIO_MODE_INPUT,
+//        .intr_type = GPIO_INTR_ANYEDGE,
+//        .pull_up_en = GPIO_PULLUP_ENABLE,
+//    };
+//    gpio_config(&io_conf);
+//
+//    // Install ISR Service with default configuration
+//    gpio_install_isr_service(0);
+//
+//    // Hook ISR handler for specific GPIO pin
+//    gpio_isr_handler_add(BUTTON_PIN, button_isr_handler, (void*) BUTTON_PIN);
+//}
 
-    // Notify the task that the button was pressed
-    xSemaphoreGiveFromISR(xButtonSemaphore, &xHigherPriorityTaskWoken);
-
-    if (xHigherPriorityTaskWoken == pdTRUE) {
-        portYIELD_FROM_ISR();
-    }
-
-//adding a random comment
-void configure_button(){
-	gpio_config_t io_conf = {
-        .pin_bit_mask = (1ULL << BUTTON_PIN),
-        .mode = GPIO_MODE_INPUT,
-        .intr_type = GPIO_INTR_ANYEDGE,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
-    };
-    gpio_config(&io_conf);
-
-    // Install ISR Service with default configuration
-    gpio_install_isr_service(0);
-
-    // Hook ISR handler for specific GPIO pin
-    gpio_isr_handler_add(BUTTON_PIN, button_isr_handler, (void*) BUTTON_PIN);
-
-void reset_variable_task(void *pvParameter) {
-    while (1) {
-        if (xSemaphoreTake(xButtonSemaphore, portMAX_DELAY)) {
-
-            // Button is pressed, toggle reset_accel value
-			xSemaphoreTake(xMutex, portMAX_DELAY);
-            reset_accel = ~ reset_accel;
-			xSemaphoreGive(xMutex);
-
-            // Wait for button release before allowing another press
-            while (gpio_get_level(BUTTON_PIN) == 0) {
-                vTaskDelay(10 / portTICK_RATE_MS);
-            }
-        }
-    }
-}
-
-void fall_detection_task (void *pvParameter) {
-
-	//ESP_LOGW(TAG, "FALL_DETECTION task started");
+void app_main(void)
+{
 	double accelx;
 	double accely;
 	double accelz;
@@ -252,8 +228,6 @@ void fall_detection_task (void *pvParameter) {
 						"y-axis =   .    ",
 						"z-axis =   .    "
 	};
-
-
 	int print_array[8];
 	double step_accel_mod;
 	double accel_mod;
@@ -266,12 +240,23 @@ void fall_detection_task (void *pvParameter) {
 	int16_t step_accely;
 	int16_t step_accelz;
 
-	//uint8_t stackHighWaterMark;
-	
-	ESP_ERROR_CHECK(i2c_master_init());
-    SSD1306_Init();
+	//// Create a semaphore to notify the task when the button is pressed
+   //xButtonSemaphore = xSemaphoreCreateBinary();
+
+	//// Configure the button and set up the ISR
+   //configure_button();
+
+	//// Create a task to handle the button press
+   //xTaskCreate(&button_task, "button_task", configMINIMAL_STACK_SIZE, NULL, TASK_PRIORITY, NULL);
+
+   //// Start the FreeRTOS scheduler
+   //vTaskStartScheduler();
 
 	
+    ESP_ERROR_CHECK(i2c_master_init());
+    SSD1306_Init();
+
+	ESP_LOGW(TAG, "Arrived befor the for loop");
 	vTaskDelay(1000/portTICK_PERIOD_MS);	
 
 	//MAG3110 configuration
@@ -286,7 +271,7 @@ void fall_detection_task (void *pvParameter) {
 
 
 	//Fist reading to calibrate the sensor and understand how it is placed 
-	mpu6050_accel_read(&accelx, &accely, &accelz,1);
+	mpu6050_accel_read(&accelx, &accely, &accelz);
 	accel_mod = sqrt(pow(accelx,2) + pow(accely,2) + pow(accelz,2));
 
 	norm_standing_accel_component[0] = accelx/accel_mod;
@@ -297,7 +282,7 @@ void fall_detection_task (void *pvParameter) {
     for(;;){ 
 
 		//compute acceleration module and absolute value of its components and the derivative of the module
-    	mpu6050_accel_read(&accelx, &accely, &accelz, reset_accel);
+    	mpu6050_accel_read(&accelx, &accely, &accelz);
 
 		step_accelx = (accelx - old_accelx);
 		step_accely = (accely - old_accely);
@@ -335,7 +320,7 @@ void fall_detection_task (void *pvParameter) {
 			vTaskDelay(1000 / portTICK_PERIOD_MS);
 
 			//read acceleration once again 
-			mpu6050_accel_read(&accelx, &accely, &accelz,1);
+			mpu6050_accel_read(&accelx, &accely, &accelz);
 			accel_mod = sqrt(pow(accelx,2) + pow(accely,2) + pow(accelz,2));
 			norm_accel_component[0]=accelx/accel_mod;
 			norm_accel_component[1]=accely/accel_mod;
@@ -393,46 +378,6 @@ void fall_detection_task (void *pvParameter) {
 		ESP_LOGW(TAG, "%s",print[0]);
 		
     	SSD1306_UpdateScreen();
-
-		//stackHighWaterMark = uxTaskGetStackHighWaterMark(NULL);
-
-		//ESP_LOGW(TAG, "main task stack usage in words = %u",stackHighWaterMark);
-
     	vTaskDelay(1000 / portTICK_PERIOD_MS);  
     }
-}
-
-
-
-void app_main(void)
-{
-	
-	
-	// Create a mutex to protect the shared variable
-    xMutex = xSemaphoreCreateMutex();
-	ESP_LOGW(TAG, "Mutex created");
-
-	// Create a semaphore to notify the task when the button is pressed
-    xButtonSemaphore = xSemaphoreCreateBinary();
-	ESP_LOGW(TAG, "xButtonSemaphore created");
-
-	// Configure the button and set up the ISR
-    configure_button();
-	ESP_LOGW(TAG, "button configured");
-
-	// Create a task to handle the button press
-    xTaskCreate(reset_variable_task, "reset_variable_task", configMINIMAL_STACK_SIZE, NULL, BUTTON_TASK_PRIORITY, NULL);
-	ESP_LOGW(TAG, "reset_variable_task created");
-
-	
-	//create a task the handle the fall detection logic
-	xTaskCreate(fall_detection_task, "fall_detection_task", 4096, NULL, FALL_DETECTION_TASK_PRIORITY, NULL);
-	ESP_LOGW(TAG, "fall_detection_task created");
-	
-	vTaskStartScheduler();
-
-	ESP_LOGW(TAG, "about to start the scheduler");
-    // Start the FreeRTOS scheduler
-
-    
 }
