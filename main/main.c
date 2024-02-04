@@ -85,6 +85,8 @@ const static char *TAG = "FALL_DETECTION:";
 //SemaphoreHandle_t xButtonSemaphore;
 
 
+static i2c_config_t i2c_conf;
+
 
 static esp_err_t mpu6050_register_read(uint8_t reg_addr, uint8_t *data, size_t len)
 {
@@ -117,19 +119,18 @@ static esp_err_t mag3110_register_write_byte(uint8_t reg_addr, uint8_t data)
 static esp_err_t i2c_master_init(void)
 {
     int i2c_master_port = I2C_MASTER_NUM;
+	i2c_config_t* conf = &i2c_conf;
 
-    i2c_config_t conf = {
-        .mode = I2C_MODE_MASTER,
-        .sda_io_num = I2C_MASTER_SDA_IO,
-        .scl_io_num = I2C_MASTER_SCL_IO,
-        .sda_pullup_en = GPIO_PULLUP_ENABLE,
-        .scl_pullup_en = GPIO_PULLUP_ENABLE,
-        .master.clk_speed = I2C_MASTER_FREQ_HZ,
-    };
+    conf->mode = I2C_MODE_MASTER;
+	conf->sda_io_num = I2C_MASTER_SDA_IO;
+	conf->scl_io_num = I2C_MASTER_SCL_IO;
+	conf->sda_pullup_en = GPIO_PULLUP_ENABLE;
+	conf->scl_pullup_en = GPIO_PULLUP_ENABLE;
+	conf->master.clk_speed = I2C_MASTER_FREQ_HZ;
 
-    i2c_param_config(i2c_master_port, &conf);
+    i2c_param_config(i2c_master_port, conf);
 
-    return i2c_driver_install(i2c_master_port, conf.mode, 0, 0, 0);
+    return i2c_driver_install(i2c_master_port, conf->mode, 0, 0, 0);
 }
 
 
@@ -154,6 +155,7 @@ void mpu6050_accel_read(double *accelx, double *accely, double *accelz) {
 	accel_aux = (((data[0] <<8)) | data[1]);
 	*accelz = accel_aux; 
 	*accelz = *accelz/16384; 
+	return;
 }
 
 void mpu6050_mag_read(double *magfx, double *magfy, double *magfz){
@@ -175,36 +177,11 @@ void mpu6050_mag_read(double *magfx, double *magfy, double *magfz){
     magf_aux = (((data[0] <<8)) | data[1]);
     *magfz = magf_aux;
     *magfz = *magfz*0.1;
+	return; 
 }
 
-//void button_isr_handler(void* arg) {
-//	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-//
-//    // Notify the task that the button was pressed
-//    xSemaphoreGiveFromISR(xButtonSemaphore, &xHigherPriorityTaskWoken);
-//
-//    if (xHigherPriorityTaskWoken == pdTRUE) {
-//        portYIELD_FROM_ISR();
-//    }
-//}
-//
-//
-//
-//void configure_button(){
-//	gpio_config_t io_conf = {
-//        .pin_bit_mask = (1ULL << BUTTON_PIN),
-//        .mode = GPIO_MODE_INPUT,
-//        .intr_type = GPIO_INTR_ANYEDGE,
-//        .pull_up_en = GPIO_PULLUP_ENABLE,
-//    };
-//    gpio_config(&io_conf);
-//
-//    // Install ISR Service with default configuration
-//    gpio_install_isr_service(0);
-//
-//    // Hook ISR handler for specific GPIO pin
-//    gpio_isr_handler_add(BUTTON_PIN, button_isr_handler, (void*) BUTTON_PIN);
-//}
+
+
 
 void app_main(void)
 {
@@ -214,11 +191,8 @@ void app_main(void)
 
 	double magfx;
 	double magfy;
-	double magfz;
+	double magfz;  
 
-	double old_accelx = 0;
-	double old_accely = 0;
-	double old_accelz = 0;
 	char print[8][16] = { "|Acc|  =   .    ",
 						"x-axis =   .    ",
 						"y-axis =   .    ",
@@ -229,16 +203,12 @@ void app_main(void)
 						"z-axis =   .    "
 	};
 	int print_array[8];
-	double step_accel_mod;
 	double accel_mod;
+	double mag_mod;
 
 	double norm_standing_accel_component[3]; //normalized vector components
 	double norm_accel_component[3];
 	double angle = 0;
-
-	int16_t step_accelx;
-	int16_t step_accely;
-	int16_t step_accelz;
 
 	//// Create a semaphore to notify the task when the button is pressed
    //xButtonSemaphore = xSemaphoreCreateBinary();
@@ -281,40 +251,31 @@ void app_main(void)
 	
     for(;;){ 
 
-		//compute acceleration module and absolute value of its components and the derivative of the module
+		//compute acceleration module and absolute value of its components
     	mpu6050_accel_read(&accelx, &accely, &accelz);
-
-		step_accelx = (accelx - old_accelx);
-		step_accely = (accely - old_accely);
-		step_accelz = (accelz - old_accelz);   
+ 
 		print_array[1] = abs(1000*accelx); 
 		print_array[2] = abs(1000*accely);
 		print_array[3] = abs(1000*accelz);
 
 		//accel module
-    	print_array[0] = 1000*(sqrt(pow(accelx,2) + pow(accely,2) + pow(accelz,2)));  
+		accel_mod =  1000*(sqrt(pow(accelx,2) + pow(accely,2) + pow(accelz,2)));  
+		print_array[0] = accel_mod;
+		
 
-		//accel derivate module
-		step_accel_mod = sqrt(pow(step_accelx,2) + pow(step_accely,2) + pow(step_accelz,2));
-
-		//save the old values
-		old_accelx = accelx;
-		old_accely = accely;
-		old_accelz = accelz;
-
-		//compute acceleration module and absolute value of its components and the derivative of the module
+		//compute magnet field module and absolute value of its components
 		mpu6050_mag_read(&magfx, &magfy, &magfz);
 		print_array[5] = abs(magfx); 
 		print_array[6] = abs(magfy);
 		print_array[7] = abs(magfz);
 
 		//magnetic field module 
-		accel_mod= sqrt(pow(magfx,2)+pow(magfy,2)+pow(magfz,2));
-		print_array[4] = accel_mod;
+		mag_mod= sqrt(pow(magfx,2)+pow(magfy,2)+pow(magfz,2));
+		print_array[4] = mag_mod;
 		  
 		SSD1306_Fill(SSD1306_COLOR_BLACK);
 
-		if((step_accel_mod>STEP_ACCEL_THRESHOLD)&&(accel_mod < ACCEL_THRESHOLD)) {
+		if((accel_mod < ACCEL_THRESHOLD)) {
 			
 			//wait for the transient
 			vTaskDelay(1000 / portTICK_PERIOD_MS);
@@ -339,7 +300,6 @@ void app_main(void)
     			SSD1306_Puts("NO fall", &Font_7x10, SSD1306_COLOR_WHITE);
 			}
 			
-			//compare the angle with a threshold 
 			//do the same thing with the magnetic field
 			  
 		} else {
