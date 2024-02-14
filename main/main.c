@@ -8,9 +8,12 @@
 #include "driver/i2c.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/queue.h"
 #include "xi2c.h"
 #include "fonts.h"
 #include "ssd1306.h"
+#include "iot_button.h"
+
 
 #include <math.h>
 
@@ -31,10 +34,11 @@ const static char *TAG = "FALL_DETECTION:";
 
 //Button parameters
 #define BUTTON 						0
-#define BUTTON_PIN	GPIO_NUM_2
+#define BUTTON_IO_NUM				0
+#define BUTTON_ACTIVE_LEVEL         BUTTON_ACTIVE_LOW
+
+
 #define TASK_PRIORITY				5
-
-
 //i2c parameters 
 #define I2C_MASTER_SCL_IO           26
 #define I2C_MASTER_SDA_IO           25
@@ -81,11 +85,24 @@ const static char *TAG = "FALL_DETECTION:";
 
 #define ACCEL_THRESHOLD						0.3
 
-
-//SemaphoreHandle_t xButtonSemaphore;
-
+static QueueHandle_t data_queue;
 
 static i2c_config_t i2c_conf;
+
+
+static char print[8][16] = { "|Acc|  =   .    ",
+						"x-axis =   .    ",
+						"y-axis =   .    ",
+						"z-axis =   .    ",
+						"|Magf|  =   .   ",
+						"x-axis =   .    ",
+						"y-axis =   .    ",
+						"z-axis =   .    "
+	};
+
+static button_handle_t btn_handle = NULL; 
+
+static uint8_t reset_accel = 0;
 
 
 static esp_err_t mpu6050_register_read(uint8_t reg_addr, uint8_t *data, size_t len)
@@ -137,28 +154,42 @@ static esp_err_t i2c_master_init(void)
 
 //ACCELERATION reading function
 void mpu6050_accel_read(double *accelx, double *accely, double *accelz) {
+	
 	uint8_t data[2];
     data[0] = 0;
     data[1] = 0;
 	int16_t accel_aux;
+	uint8_t reset = 0;
+	if(!uxQueueSpacesAvailable(data_queue)){
+		xQueuePeek(data_queue,&(reset),0);
+	}
 
-
-	ESP_ERROR_CHECK(mpu6050_register_read(MPU6050_ACCEL_XOUT, data, 2));
-	accel_aux = (((data[0] <<8)) | data[1]);
-	*accelx = accel_aux;
-	*accelx = *accelx/16384;  //to get the acceleration in gs 
-	ESP_ERROR_CHECK(mpu6050_register_read(MPU6050_ACCEL_YOUT, data, 2));
-	accel_aux = (((data[0] <<8)) | data[1]);
-	*accely = accel_aux;
-	*accely = *accely/16384;
-	ESP_ERROR_CHECK(mpu6050_register_read(MPU6050_ACCEL_ZOUT, data, 2));
-	accel_aux = (((data[0] <<8)) | data[1]);
-	*accelz = accel_aux; 
-	*accelz = *accelz/16384; 
+	if(!reset){
+		ESP_ERROR_CHECK(mpu6050_register_read(MPU6050_ACCEL_XOUT, data, 2));
+		accel_aux = (((data[0] <<8)) | data[1]);
+		*accelx = accel_aux;
+		*accelx = *accelx/16384;  //to get the acceleration in gs 
+		ESP_ERROR_CHECK(mpu6050_register_read(MPU6050_ACCEL_YOUT, data, 2));
+		accel_aux = (((data[0] <<8)) | data[1]);
+		*accely = accel_aux;
+		*accely = *accely/16384;
+		ESP_ERROR_CHECK(mpu6050_register_read(MPU6050_ACCEL_ZOUT, data, 2));
+		accel_aux = (((data[0] <<8)) | data[1]);
+		*accelz = accel_aux; 
+		*accelz = *accelz/16384; 
+		
+	} else{
+		*accelx = 0; 
+		*accely = 0;
+		*accelz = 0;
+	}
+	
 	return;
 }
 
-void mpu6050_mag_read(double *magfx, double *magfy, double *magfz){
+	
+
+void mag3110_mag_read(double *magfx, double *magfy, double *magfz){
 
 	uint8_t data[2];
     data[0] = 0;
@@ -181,56 +212,60 @@ void mpu6050_mag_read(double *magfx, double *magfy, double *magfz){
 }
 
 
+//call back that toggle the value of a variable
+void btn_cb() {
+	uint8_t tmp = 0; 
+	ESP_LOGI(TAG,"User defines button was pushed");
+    reset_accel ^= 1;		
+	ESP_LOGI(TAG, "reset_accel = %d", reset_accel);
+	if(!uxQueueSpacesAvailable(data_queue)){
+		xQueueReceive(data_queue,&tmp, 0);
+	} 
+	xQueueSend(data_queue, &reset_accel, 0);
+	return; 		
+}
+
+void button_init(){
+	ESP_LOGI(TAG, "STARTED: button initialization"); 
+	btn_handle = iot_button_create((gpio_num_t)BUTTON_IO_NUM, BUTTON_ACTIVE_LEVEL);
+	//set event callback
+	ESP_ERROR_CHECK(iot_button_set_evt_cb(btn_handle, BUTTON_CB_TAP, btn_cb, NULL));
+    ESP_LOGI(TAG, "COMPLETED: Button initialization");
+}
 
 
-void app_main(void)
-{
+void fall_detection_task(void *pvParameter){
 	double accelx;
 	double accely;
 	double accelz;
 
 	double magfx;
 	double magfy;
-	double magfz;  
+	double magfz; 
 
-	char print[8][16] = { "|Acc|  =   .    ",
-						"x-axis =   .    ",
-						"y-axis =   .    ",
-						"z-axis =   .    ",
-						"|Magf|  =   .   ",
-						"x-axis =   .    ",
-						"y-axis =   .    ",
-						"z-axis =   .    "
-	};
 	int print_array[8];
+
 	double accel_mod;
 	double mag_mod;
 
 	double norm_standing_accel_component[3]; //normalized vector components
+	double norm_standing_mag_component[3];
 	double norm_accel_component[3];
-	double angle = 0;
+	double norm_mag_component[3];
+	double angle_accel = 0;
+	double angle_mag = 0;
 
-	//// Create a semaphore to notify the task when the button is pressed
-   //xButtonSemaphore = xSemaphoreCreateBinary();
-
-	//// Configure the button and set up the ISR
-   //configure_button();
-
-	//// Create a task to handle the button press
-   //xTaskCreate(&button_task, "button_task", configMINIMAL_STACK_SIZE, NULL, TASK_PRIORITY, NULL);
-
-   //// Start the FreeRTOS scheduler
-   //vTaskStartScheduler();
-
+	//i2c master setup
+	ESP_ERROR_CHECK(i2c_master_init());
 	
-    ESP_ERROR_CHECK(i2c_master_init());
+	//Display setup 
     SSD1306_Init();
 
-	ESP_LOGW(TAG, "Arrived befor the for loop");
-	vTaskDelay(1000/portTICK_PERIOD_MS);	
+	ESP_LOGW(TAG, "fall detection task started");
+	vTaskDelay(1000/portTICK_PERIOD_MS);
 
-	//MAG3110 configuration
-	
+
+	//mag3110 configuration 
 	ESP_ERROR_CHECK(mag3110_register_write_byte(MAG3110_CTRL_REG1_ADDR, MAG3110_CTRL_REG1_VALUE));
 	ESP_ERROR_CHECK(mag3110_register_write_byte(MAG3110_CTRL_REG2_ADDR, MAG3110_AUTO_MRST_EN));
 
@@ -239,17 +274,22 @@ void app_main(void)
     ESP_ERROR_CHECK(mpu6050_register_write_byte (MPU6050_PWR_MGMT_1_REG_ADDR,MPU6050_PWR_MGMT_1_VALUE));
     ESP_ERROR_CHECK(mpu6050_register_write_byte(MPU6050_ACCEL_CONFIG_REG_ADDR, MPU6050_ACCEL_CONFIG_2G_VALUE));
 
+	mag3110_mag_read(&magfx,&magfy,&magfz);
+	accel_mod = sqrt(pow(magfx,2) + pow(magfy,2) + pow(magfz,2));   //to save stack space i use accel_mod to store mag_mode
+	norm_standing_mag_component[0] = magfx/accel_mod;
+	norm_standing_mag_component[1] = magfy/accel_mod;
+	norm_standing_mag_component[2] = magfz/accel_mod;
+
 
 	//Fist reading to calibrate the sensor and understand how it is placed 
 	mpu6050_accel_read(&accelx, &accely, &accelz);
-	accel_mod = sqrt(pow(accelx,2) + pow(accely,2) + pow(accelz,2));
-
+	accel_mod = sqrt(pow(accelx,2) + pow(accely,2) + pow(accelz,2));	
+	
 	norm_standing_accel_component[0] = accelx/accel_mod;
 	norm_standing_accel_component[1] = accely/accel_mod;
 	norm_standing_accel_component[2] = accelz/accel_mod;
 
-	
-    for(;;){ 
+	for(;;){ 
 
 		//compute acceleration module and absolute value of its components
     	mpu6050_accel_read(&accelx, &accely, &accelz);
@@ -264,7 +304,8 @@ void app_main(void)
 		
 
 		//compute magnet field module and absolute value of its components
-		mpu6050_mag_read(&magfx, &magfy, &magfz);
+		//TODO: to be removed
+		mag3110_mag_read(&magfx, &magfy, &magfz);
 		print_array[5] = abs(magfx); 
 		print_array[6] = abs(magfy);
 		print_array[7] = abs(magfz);
@@ -287,11 +328,20 @@ void app_main(void)
 			norm_accel_component[1]=accely/accel_mod;
 			norm_accel_component[2]=accelz/accel_mod;
 
+			mag3110_mag_read(&magfx, &magfy, &magfz);
+			accel_mod = sqrt(pow(magfx,2) + pow(magfy,2) + pow(magfz,2));
+			norm_mag_component[0]=magfx/accel_mod;
+			norm_mag_component[1]=magfy/accel_mod;
+			norm_mag_component[2]=magfz/accel_mod;
+
+
+
 			for (int i = 0; i < 3; i++) {
-        		angle += norm_accel_component[i] * norm_standing_accel_component[i];
+        		angle_accel += norm_accel_component[i] * norm_standing_accel_component[i];
+				angle_mag+= norm_mag_component[i] * norm_standing_mag_component[i];
     		}
 
-			if(angle > ANGLE_THTRESHOLD){
+			if((angle_accel > ANGLE_THTRESHOLD)&&(angle_mag    > ANGLE_THTRESHOLD)){
 				SSD1306_GotoXY(8, 5);
     			SSD1306_Puts("fall detected", &Font_7x10, SSD1306_COLOR_WHITE);
 			} else
@@ -340,4 +390,18 @@ void app_main(void)
     	SSD1306_UpdateScreen();
     	vTaskDelay(1000 / portTICK_PERIOD_MS);  
     }
+}
+
+void app_main(void)
+{
+	data_queue = xQueueCreate(1, sizeof(uint8_t)); 
+	ESP_LOGI(TAG, "data queue created"); 
+	button_init();
+	ESP_LOGI(TAG, "botton configured");
+
+	//xMutex = xSemaphoreCreateMutex();
+	//ESP_LOGW(TAG, "Mutex created");
+
+	xTaskCreate(&fall_detection_task, "fall_detection_task", 1024*10, NULL, TASK_PRIORITY, NULL);
+	ESP_LOGI(TAG, "SCHEDULER: starting");
 }
