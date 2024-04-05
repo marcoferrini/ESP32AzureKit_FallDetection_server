@@ -1,21 +1,35 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <math.h>
 
 #include "esp_event.h"
 #include "esp_log.h"
 #include "driver/gpio.h"
 #include "driver/i2c.h"
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
+
+#include "nvs_flash.h"
+#include "esp_bt.h"
+#include "esp_gap_ble_api.h"
+#include "esp_gatts_api.h"
+#include "esp_bt_defs.h"
+#include "esp_bt_main.h"
+#include "esp_gatt_common_api.h"
+#include "sdkconfig.h"
+
+#include "bt_functions.c"
 #include "xi2c.h"
 #include "fonts.h"
 #include "ssd1306.h"
 #include "iot_button.h"
+#include "sensors.c"
 
 
-#include <math.h>
+
 
 //ATTENZIONE in questo modo mostro i moduli delle componenti delle accelerazioni sui tre assi 
 
@@ -32,32 +46,13 @@
 
 const static char *TAG = "FALL_DETECTION:";
 
-//Button parameters
-#define BUTTON 						0
-#define BUTTON_IO_NUM				0
-#define BUTTON_ACTIVE_LEVEL         BUTTON_ACTIVE_LOW
-
-
+//TASk
 #define TASK_PRIORITY				5
-//i2c parameters 
-#define I2C_MASTER_SCL_IO           26
-#define I2C_MASTER_SDA_IO           25
-#define I2C_MASTER_NUM              0
-#define I2C_MASTER_FREQ_HZ          100000
-#define I2C_MASTER_TIMEOUT_MS       1000
-
-
-//ACCELEROMETER registers and values
-#define MPU6050_SENSOR_ADDR                 0x68
-#define MPU6050_ACCEL_XOUT           		0x3B
-#define MPU6050_ACCEL_YOUT           		0x3D
-#define MPU6050_ACCEL_ZOUT           		0x3F
-#define MPU6050_TEMP_OUT           			0x41
 
 //Angle threshold to detect a fall
-#define ANGLE_THTRESHOLD					0.785   //in radians = pi/4
+#define ANGLE_THTRESHOLD					45   //deg
 
-
+//Accel param confid
 #define MPU6050_PWR_MGMT_1_REG_ADDR         0x6B
 #define MPU6050_PWR_MGMT_1_VALUE 			0x00
 
@@ -65,29 +60,34 @@ const static char *TAG = "FALL_DETECTION:";
 #define MPU6050_ACCEL_CONFIG_2G_VALUE		0x00
 
 
-//MAGNETOMETER registers and values
+//MAGNETOMETER registers and values config
 #define MAG3110_SENSOR_ADDR					0x0E  //the problem is with the address of this sensor or more in general with the sensor itself
 #define MAG3110_CTRL_REG1_ADDR				0x10
 #define MAG3110_CTRL_REG2_ADDR				0x11
 
 #define MAG3110_DR_STATUS_ADDR              0x00
-#define MAG3110_OUT_X_MSB_ADDR              0x01
-#define MAG3110_OUT_X_LSB_ADDR              0x02
-#define MAG3110_OUT_Y_MSB_ADDR              0x03
-#define MAG3110_OUT_Y_LSB_ADDR              0x04
-#define MAG3110_OUT_Z_MSB_ADDR              0x05
-#define MAG3110_OUT_Z_LSB_ADDR              0x06
+#define MAG3110_OFF_X_MSB_REG				0x09
+#define MAG3110_OFF_X_LSB_REG				0x0A
+#define MAG3110_OFF_Y_MSB_REG				0x0B
+#define MAG3110_OFF_Y_LSB_REG				0x0C
+#define MAG3110_OFF_Z_MSB_REG				0x0D
+#define MAG3110_OFF_Z_LSB_REG				0x0E
 
-#define MAG3110_AUTO_MRST_EN				0x80    //auto_mrst_en e raw data(no offset)
+
+#define MAG3110_AUTO_MRST_EN				0x80    //auto_mrst_en 
+
 #define MAG3110_CTRL_REG1_VALUE				0x01
-//Parameters
-#define STEP_ACCEL_THRESHOLD				0.9  //In g
 
-#define ACCEL_THRESHOLD						0.3
 
-static QueueHandle_t data_queue;
 
-static i2c_config_t i2c_conf;
+#define ACCEL_THRESHOLD						1.2   //in gs 
+
+
+
+
+QueueHandle_t data_queue;
+
+
 
 
 static char print[8][16] = { "|Acc|  =   .    ",
@@ -100,200 +100,60 @@ static char print[8][16] = { "|Acc|  =   .    ",
 						"z-axis =   .    "
 	};
 
-static button_handle_t btn_handle = NULL; 
-
-static uint8_t reset_accel = 0;
-
-
-static esp_err_t mpu6050_register_read(uint8_t reg_addr, uint8_t *data, size_t len)
-{
-    return i2c_master_write_read_device(I2C_MASTER_NUM, MPU6050_SENSOR_ADDR, &reg_addr, 1, data, len, I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS);
-}
-
-static esp_err_t mpu6050_register_write_byte(uint8_t reg_addr, uint8_t data)
-{
-    int ret;
-    uint8_t write_buf[2] = {reg_addr, data};
-
-    ret = i2c_master_write_to_device(I2C_MASTER_NUM, MPU6050_SENSOR_ADDR, write_buf, sizeof(write_buf), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS);
-
-    return ret;
-}
-
-static esp_err_t mag3110_register_read(uint8_t reg_addr, uint8_t *data, size_t len)
-{
-    return i2c_master_write_read_device(I2C_MASTER_NUM, MAG3110_SENSOR_ADDR, &reg_addr, 1, data, len, I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS);
-}
-
-static esp_err_t mag3110_register_write_byte(uint8_t reg_addr, uint8_t data)
-{
-    int ret;
-    uint8_t write_buf[2] = {reg_addr, data};
-    ret = i2c_master_write_to_device(I2C_MASTER_NUM, MAG3110_SENSOR_ADDR, write_buf, sizeof(write_buf), I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS);
-    return ret;
-}
-
-static esp_err_t i2c_master_init(void)
-{
-    int i2c_master_port = I2C_MASTER_NUM;
-	i2c_config_t* conf = &i2c_conf;
-
-    conf->mode = I2C_MODE_MASTER;
-	conf->sda_io_num = I2C_MASTER_SDA_IO;
-	conf->scl_io_num = I2C_MASTER_SCL_IO;
-	conf->sda_pullup_en = GPIO_PULLUP_ENABLE;
-	conf->scl_pullup_en = GPIO_PULLUP_ENABLE;
-	conf->master.clk_speed = I2C_MASTER_FREQ_HZ;
-
-    i2c_param_config(i2c_master_port, conf);
-
-    return i2c_driver_install(i2c_master_port, conf->mode, 0, 0, 0);
-}
 
 
 
-//ACCELERATION reading function
-void mpu6050_accel_read(double *accelx, double *accely, double *accelz) {
-	
-	uint8_t data[2];
-    data[0] = 0;
-    data[1] = 0;
-	int16_t accel_aux;
-	uint8_t reset = 0;
-	if(!uxQueueSpacesAvailable(data_queue)){
-		xQueuePeek(data_queue,&(reset),0);
-	}
-
-	if(!reset){
-		ESP_ERROR_CHECK(mpu6050_register_read(MPU6050_ACCEL_XOUT, data, 2));
-		accel_aux = (((data[0] <<8)) | data[1]);
-		*accelx = accel_aux;
-		*accelx = *accelx/16384;  //to get the acceleration in gs 
-		ESP_ERROR_CHECK(mpu6050_register_read(MPU6050_ACCEL_YOUT, data, 2));
-		accel_aux = (((data[0] <<8)) | data[1]);
-		*accely = accel_aux;
-		*accely = *accely/16384;
-		ESP_ERROR_CHECK(mpu6050_register_read(MPU6050_ACCEL_ZOUT, data, 2));
-		accel_aux = (((data[0] <<8)) | data[1]);
-		*accelz = accel_aux; 
-		*accelz = *accelz/16384; 
-		
-	} else{
-		*accelx = 0; 
-		*accely = 0;
-		*accelz = 0;
-	}
-	
-	return;
-}
-
-	
-
-void mag3110_mag_read(double *magfx, double *magfy, double *magfz){
-
-	uint8_t data[2];
-    data[0] = 0;
-    data[1] = 0;
-	int16_t magf_aux;
-
-	ESP_ERROR_CHECK(mag3110_register_read(MAG3110_OUT_X_MSB_ADDR, data, 2));
-    magf_aux = (((data[0] <<8)) | data[1]);
-    *magfx = magf_aux;
-    *magfx = *magfx*0.1;  //to get the field in uT
-    ESP_ERROR_CHECK(mag3110_register_read(MAG3110_OUT_Y_MSB_ADDR, data, 2));
-    magf_aux = (((data[0] <<8)) | data[1]);
-    *magfy = magf_aux;
-    *magfy = *magfy*0.1;
-    ESP_ERROR_CHECK(mag3110_register_read(MAG3110_OUT_Z_MSB_ADDR, data, 2));
-    magf_aux = (((data[0] <<8)) | data[1]);
-    *magfz = magf_aux;
-    *magfz = *magfz*0.1;
-	return; 
-}
-
-
-//call back that toggle the value of a variable
-void btn_cb() {
-	uint8_t tmp = 0; 
-	ESP_LOGI(TAG,"User defines button was pushed");
-    reset_accel ^= 1;		
-	ESP_LOGI(TAG, "reset_accel = %d", reset_accel);
-	if(!uxQueueSpacesAvailable(data_queue)){
-		xQueueReceive(data_queue,&tmp, 0);
-	} 
-	xQueueSend(data_queue, &reset_accel, 0);
-	return; 		
-}
-
-void button_init(){
-	ESP_LOGI(TAG, "STARTED: button initialization"); 
-	btn_handle = iot_button_create((gpio_num_t)BUTTON_IO_NUM, BUTTON_ACTIVE_LEVEL);
-	//set event callback
-	ESP_ERROR_CHECK(iot_button_set_evt_cb(btn_handle, BUTTON_CB_TAP, btn_cb, NULL));
-    ESP_LOGI(TAG, "COMPLETED: Button initialization");
-}
 
 
 void fall_detection_task(void *pvParameter){
-	double accelx;
-	double accely;
-	double accelz;
+	float accelx;
+	float accely;
+	float accelz;
 
-	double magfx;
-	double magfy;
-	double magfz; 
+	float magfx;
+	float magfy;
+	float magfz; 
 
 	int print_array[8];
 
-	double accel_mod;
-	double mag_mod;
+	float accel_mod;
+	float mag_mod;
 
-	double norm_standing_accel_component[3]; //normalized vector components
-	double norm_standing_mag_component[3];
-	double norm_accel_component[3];
-	double norm_mag_component[3];
-	double angle_accel = 0;
-	double angle_mag = 0;
-
-	//i2c master setup
-	ESP_ERROR_CHECK(i2c_master_init());
+	float norm_standing_mag_component[3];
+	float norm_mag_component[3];
+	float norm_standing_acc_component[3];
+	float norm_acc_component[3];
+	float angle_accel = 0;
+	float angle_mag = 0;
 	
-	//Display setup 
-    SSD1306_Init();
-
-	ESP_LOGW(TAG, "fall detection task started");
-	vTaskDelay(1000/portTICK_PERIOD_MS);
-
-
-	//mag3110 configuration 
-	ESP_ERROR_CHECK(mag3110_register_write_byte(MAG3110_CTRL_REG1_ADDR, MAG3110_CTRL_REG1_VALUE));
-	ESP_ERROR_CHECK(mag3110_register_write_byte(MAG3110_CTRL_REG2_ADDR, MAG3110_AUTO_MRST_EN));
-
-	
-	//MPU6050 configuration 
-    ESP_ERROR_CHECK(mpu6050_register_write_byte (MPU6050_PWR_MGMT_1_REG_ADDR,MPU6050_PWR_MGMT_1_VALUE));
-    ESP_ERROR_CHECK(mpu6050_register_write_byte(MPU6050_ACCEL_CONFIG_REG_ADDR, MPU6050_ACCEL_CONFIG_2G_VALUE));
+	//setted to one when the fall is detected would be nice to put it at zero when in the client a button is pressed
+	uint8_t fall_detected[ATTR_VALUE_SIZE];
+	fall_detected[0] = 0;
+	ble_attr_data_write(fall_detected);
 
 	mag3110_mag_read(&magfx,&magfy,&magfz);
-	accel_mod = sqrt(pow(magfx,2) + pow(magfy,2) + pow(magfz,2));   //to save stack space i use accel_mod to store mag_mode
-	norm_standing_mag_component[0] = magfx/accel_mod;
-	norm_standing_mag_component[1] = magfy/accel_mod;
-	norm_standing_mag_component[2] = magfz/accel_mod;
+	mag_mod = sqrt(pow(magfx,2) + pow(magfy,2) + pow(magfz,2)); 
+	norm_standing_mag_component[0] = magfx/mag_mod;
+	norm_standing_mag_component[1] = magfy/mag_mod;
+	norm_standing_mag_component[2] = magfz/mag_mod;
 
-
-	//Fist reading to calibrate the sensor and understand how it is placed 
 	mpu6050_accel_read(&accelx, &accely, &accelz);
-	accel_mod = sqrt(pow(accelx,2) + pow(accely,2) + pow(accelz,2));	
-	
-	norm_standing_accel_component[0] = accelx/accel_mod;
-	norm_standing_accel_component[1] = accely/accel_mod;
-	norm_standing_accel_component[2] = accelz/accel_mod;
+	accel_mod = (sqrt(pow(accelx,2) + pow(accely,2) + pow(accelz,2)));  
+	norm_standing_acc_component[0] = accelx/accel_mod;
+	norm_standing_acc_component[1] = accely/accel_mod;
+	norm_standing_acc_component[2] = accelz/accel_mod;
+
+	SSD1306_Fill(SSD1306_COLOR_BLACK);
+
 
 	for(;;){ 
 
+		ble_attr_data_read(fall_detected);
+
 		//compute acceleration module and absolute value of its components
     	mpu6050_accel_read(&accelx, &accely, &accelz);
- 
+
+		
 		print_array[1] = abs(1000*accelx); 
 		print_array[2] = abs(1000*accely);
 		print_array[3] = abs(1000*accelz);
@@ -304,62 +164,77 @@ void fall_detection_task(void *pvParameter){
 		
 
 		//compute magnet field module and absolute value of its components
-		//TODO: to be removed
 		mag3110_mag_read(&magfx, &magfy, &magfz);
-		print_array[5] = abs(magfx); 
-		print_array[6] = abs(magfy);
-		print_array[7] = abs(magfz);
+		print_array[5] = magfx; 
+		print_array[6] = magfy;
+		print_array[7] = magfz;
 
 		//magnetic field module 
 		mag_mod= sqrt(pow(magfx,2)+pow(magfy,2)+pow(magfz,2));
 		print_array[4] = mag_mod;
 		  
-		SSD1306_Fill(SSD1306_COLOR_BLACK);
+		
+		//detect the impact
+		if((accel_mod > ACCEL_THRESHOLD*1000)) {
+			angle_accel = 0; 
+			angle_mag = 0; 
 
-		if((accel_mod < ACCEL_THRESHOLD)) {
+			//dalay task execution of 1s because of a eventual transient 
+			vTaskDelay(1000 / portTICK_PERIOD_MS); 
 			
-			//wait for the transient
-			vTaskDelay(1000 / portTICK_PERIOD_MS);
-
-			//read acceleration once again 
 			mpu6050_accel_read(&accelx, &accely, &accelz);
-			accel_mod = sqrt(pow(accelx,2) + pow(accely,2) + pow(accelz,2));
-			norm_accel_component[0]=accelx/accel_mod;
-			norm_accel_component[1]=accely/accel_mod;
-			norm_accel_component[2]=accelz/accel_mod;
+			accel_mod = (sqrt(pow(accelx,2) + pow(accely,2) + pow(accelz,2)));  
+			norm_acc_component[0] = accelx/accel_mod;
+			norm_acc_component[1] = accely/accel_mod;
+			norm_acc_component[2] = accelz/accel_mod;
 
 			mag3110_mag_read(&magfx, &magfy, &magfz);
-			accel_mod = sqrt(pow(magfx,2) + pow(magfy,2) + pow(magfz,2));
-			norm_mag_component[0]=magfx/accel_mod;
-			norm_mag_component[1]=magfy/accel_mod;
-			norm_mag_component[2]=magfz/accel_mod;
+			mag_mod = sqrt(pow(magfx,2) + pow(magfy,2) + pow(magfz,2));
+			norm_mag_component[0]=magfx/mag_mod;
+			norm_mag_component[1]=magfy/mag_mod;
+			norm_mag_component[2]=magfz/mag_mod;
 
 
 
 			for (int i = 0; i < 3; i++) {
-        		angle_accel += norm_accel_component[i] * norm_standing_accel_component[i];
+        		angle_accel += norm_acc_component[i] * norm_standing_acc_component[i];
 				angle_mag+= norm_mag_component[i] * norm_standing_mag_component[i];
     		}
 
-			if((angle_accel > ANGLE_THTRESHOLD)&&(angle_mag    > ANGLE_THTRESHOLD)){
-				SSD1306_GotoXY(8, 5);
-    			SSD1306_Puts("fall detected", &Font_7x10, SSD1306_COLOR_WHITE);
-			} else
-			{
-				SSD1306_GotoXY(8, 5);
-    			SSD1306_Puts("NO fall", &Font_7x10, SSD1306_COLOR_WHITE);
+			ESP_LOGI(TAG, "angle_accel = %f", angle_accel); 
+			ESP_LOGI(TAG, "angle_mag = %f", angle_mag);
+			angle_accel = fabs(acos(angle_accel)*180/(3.14)); 
+			angle_mag = fabs(acos(angle_mag)*180/(3.14)); 
+
+			ESP_LOGI(TAG, "angle_accel = %f", angle_accel); 
+			ESP_LOGI(TAG, "angle_mag = %f", angle_mag); 
+
+			if((angle_accel > ANGLE_THTRESHOLD)&&(angle_mag   > ANGLE_THTRESHOLD)){
+				fall_detected[0] = 1;
+				ble_attr_data_write(fall_detected);
 			}
-			
-			//do the same thing with the magnetic field
 			  
-		} else {
-			SSD1306_GotoXY(8, 5);
-    		SSD1306_Puts("NO fall", &Font_7x10, SSD1306_COLOR_WHITE);
 		}
+
+		if (fall_detected[0])
+		{
+			SSD1306_GotoXY(8, 5);
+			SSD1306_Puts("       ", &Font_7x10, SSD1306_COLOR_WHITE);
+			SSD1306_GotoXY(8, 5);
+			SSD1306_Puts("fall detected", &Font_7x10, SSD1306_COLOR_WHITE);
+		} else
+		{
+			SSD1306_GotoXY(8, 5);
+			SSD1306_Puts("             ", &Font_7x10, SSD1306_COLOR_WHITE);
+			SSD1306_GotoXY(8, 5);
+			SSD1306_Puts("NO fall", &Font_7x10, SSD1306_COLOR_WHITE);
+		}
+		
+		
 
 	
 		
-
+		ble_attr_data_write(fall_detected);
 		//print in the display
 		for (int j = 0; j < 8; j++)
 		{
@@ -379,14 +254,23 @@ void fall_detection_task(void *pvParameter){
 			if (j<4)
 			{
 				SSD1306_GotoXY(8, 20+j*10);
-    			SSD1306_Puts(print[j+BUTTON*4], &Font_7x10, SSD1306_COLOR_WHITE);
+    			SSD1306_Puts(print[j], &Font_7x10, SSD1306_COLOR_WHITE);
 			}
 			
     		
 		}
-		//print in the terminal
-		ESP_LOGW(TAG, "%s",print[0]);
-		
+		//print to the terminal the magnetic field
+		ESP_LOGW(TAG, "MAG measurement");
+		ESP_LOGI(TAG, "magx = %f", magfx);
+		ESP_LOGI(TAG, "magy = %f", magfy);
+		ESP_LOGI(TAG, "magz = %f", magfz);
+		ESP_LOGI(TAG, "mag module = %f", mag_mod);
+
+		//ESP_LOGW(TAG, "ACCEL measurement");
+		//ESP_LOGI(TAG, "accx = %f", accelx);
+		//ESP_LOGI(TAG, "accy = %f", accely);
+		//ESP_LOGI(TAG, "accz = %f", accelz);
+
     	SSD1306_UpdateScreen();
     	vTaskDelay(1000 / portTICK_PERIOD_MS);  
     }
@@ -394,13 +278,89 @@ void fall_detection_task(void *pvParameter){
 
 void app_main(void)
 {
+
+	/////////////////////////////////////////////
+	//SENSORS SETUP
+	//
+	/////////////////////////////////////////////
 	data_queue = xQueueCreate(1, sizeof(uint8_t)); 
-	ESP_LOGI(TAG, "data queue created"); 
+	ESP_LOGI(TAG, "data queue created");
 	button_init();
 	ESP_LOGI(TAG, "botton configured");
 
-	//xMutex = xSemaphoreCreateMutex();
-	//ESP_LOGW(TAG, "Mutex created");
+	//i2c master setup
+	ESP_ERROR_CHECK(i2c_master_init());
+	
+	//Display setup 
+    SSD1306_Init();
+	vTaskDelay(1000/portTICK_PERIOD_MS);
+	SSD1306_Fill(SSD1306_COLOR_BLACK);
+
+	//Resetting the offset for the magnetic sensor 
+	ESP_ERROR_CHECK(mag3110_register_write_byte(MAG3110_OFF_X_MSB_REG,0x00));
+	ESP_ERROR_CHECK(mag3110_register_write_byte(MAG3110_OFF_X_LSB_REG,0x00));
+	ESP_ERROR_CHECK(mag3110_register_write_byte(MAG3110_OFF_Y_MSB_REG,0x00));
+	ESP_ERROR_CHECK(mag3110_register_write_byte(MAG3110_OFF_Y_LSB_REG,0x00));
+	ESP_ERROR_CHECK(mag3110_register_write_byte(MAG3110_OFF_Z_MSB_REG,0x00));
+	ESP_ERROR_CHECK(mag3110_register_write_byte(MAG3110_OFF_Z_LSB_REG,0x00));
+
+
+	//mag3110 configuration 
+	ESP_ERROR_CHECK(mag3110_register_write_byte(MAG3110_CTRL_REG1_ADDR, MAG3110_CTRL_REG1_VALUE));
+	ESP_ERROR_CHECK(mag3110_register_write_byte(MAG3110_CTRL_REG2_ADDR, MAG3110_AUTO_MRST_EN));
+
+	//mag3110 offset correction
+	ESP_LOGI(TAG, "start mag3110 calibration");
+	SSD1306_GotoXY(8, 5);
+	SSD1306_Puts("start mag3110 calibration", &Font_7x10, SSD1306_COLOR_WHITE);
+	SSD1306_UpdateScreen();
+	mag3110_calibrating();
+	ESP_LOGI(TAG, "mag3110 calibrated");
+	SSD1306_Puts("mag3110 calibrated", &Font_7x10, SSD1306_COLOR_WHITE);
+	SSD1306_UpdateScreen();
+
+	
+	//MPU6050 configuration 
+    ESP_ERROR_CHECK(mpu6050_register_write_byte (MPU6050_PWR_MGMT_1_REG_ADDR,MPU6050_PWR_MGMT_1_VALUE));
+    ESP_ERROR_CHECK(mpu6050_register_write_byte(MPU6050_ACCEL_CONFIG_REG_ADDR, MPU6050_ACCEL_CONFIG_2G_VALUE));
+
+	/////////////////////////////////////////////
+	//BLE SETUP
+	//
+	/////////////////////////////////////////////
+
+	// Initialize NVS.
+	ESP_ERROR_CHECK(nvs_flash_init());	
+
+	//bluetooth config
+	esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
+	ESP_ERROR_CHECK(esp_bt_controller_init(&bt_cfg));
+	ESP_ERROR_CHECK(esp_bt_controller_enable(ESP_BT_MODE_BLE));
+
+	//bluedroid config
+	//esp_bluedroid_config_t bluedroid_cfg = BT_BLUEDROID_INIT_CONFIG_DEFAULT();
+	ESP_ERROR_CHECK(esp_bluedroid_init());
+	ESP_ERROR_CHECK( esp_bluedroid_enable());
+
+	//GAP and GATTS event handlers registration
+	ESP_ERROR_CHECK(esp_ble_gatts_register_callback(esp_gatts_cb));
+	ESP_ERROR_CHECK(esp_ble_gap_register_callback(esp_gap_cb));
+
+
+	ESP_ERROR_CHECK(esp_ble_gap_set_device_name("IOT_SERVER"));
+	ESP_ERROR_CHECK(esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV,ESP_PWR_LVL_N12));
+	ESP_ERROR_CHECK(esp_ble_gatts_app_register(PROFILE_A_APP_ID));
+	
+	esp_err_t local_mtu_ret = esp_ble_gatt_set_local_mtu(500);
+    if (local_mtu_ret){
+        ESP_LOGE(TAG, "set local  MTU failed, error code = %x", local_mtu_ret);
+    }
+
+	/////////////////////////////////////////////
+	//TASK CREATION
+	//
+	/////////////////////////////////////////////
+ 	
 
 	xTaskCreate(&fall_detection_task, "fall_detection_task", 1024*10, NULL, TASK_PRIORITY, NULL);
 	ESP_LOGI(TAG, "SCHEDULER: starting");
