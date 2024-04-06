@@ -25,6 +25,8 @@
 
 const static char *SERVER_TAG = "BLE SERVER:";
 
+extern TaskHandle_t fall_detection_task_handle;
+
 static uint8_t char1_val[ATTR_VALUE_SIZE]={0x00};
 static esp_attr_value_t gatts_char1_val =
 {
@@ -135,7 +137,7 @@ static void esp_gatts_cb(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp
             gl_profile_tab[param->reg.app_id].gatts_if = gatts_if;
         }
         else {
-            ESP_LOGI(SERVER_TAG,"ESP_GATTS_REG_EVT error: %d \n", param->reg.status);
+            ESP_LOGE(SERVER_TAG,"ESP_GATTS_REG_EVT error: %d \n", param->reg.status);
             return;
         }
     }
@@ -184,7 +186,7 @@ static void esp_gatts_A_cb(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, e
 			gl_profile_tab[PROFILE_A_APP_ID].char_uuid.len = ESP_UUID_LEN_16;
 			gl_profile_tab[PROFILE_A_APP_ID].char_uuid.uuid.uuid16 = GATTS_CHAR_UUID_A;
 			ESP_ERROR_CHECK(esp_ble_gatts_add_char(gl_profile_tab[PROFILE_A_APP_ID].service_handle, &gl_profile_tab[PROFILE_A_APP_ID].char_uuid,
-													ESP_GATT_PERM_READ, ESP_GATT_CHAR_PROP_BIT_READ, &gatts_char1_val, &control));
+													ESP_GATT_PERM_READ|ESP_GATT_PERM_WRITE, ESP_GATT_CHAR_PROP_BIT_READ|ESP_GATT_CHAR_PROP_BIT_WRITE_NR, &gatts_char1_val, &control));
 		break;
 		}
 
@@ -233,6 +235,22 @@ static void esp_gatts_A_cb(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, e
 		break;
 	    }
 
+		case ESP_GATTS_WRITE_EVT:
+            if (!param->write.is_prep){
+                ESP_LOGI(SERVER_TAG, "GATT_WRITE_EVT, handle = %d, value len = %d, value :", param->write.handle, param->write.len);
+                esp_log_buffer_hex(SERVER_TAG, param->write.value, param->write.len);
+                ble_attr_data_write(param->write.value);
+                if (param->write.need_rsp){
+                    esp_ble_gatts_send_response(gatts_if, param->write.conn_id, param->write.trans_id, ESP_GATT_OK, NULL);
+                }
+				xTaskNotifyGive(fall_detection_task_handle);
+				
+            }else{
+                /* handle prepare write */
+                ESP_LOGE(SERVER_TAG, "ESP_GATTS_WRITE_EVT unhandled");
+            }
+      	break;
+
 	    case ESP_GATTS_SET_ATTR_VAL_EVT:
 
 	    	ESP_LOGI(SERVER_TAG,"ESP_GATTS_SET_ATTR_VAL_EVT \n");
@@ -250,7 +268,7 @@ static void esp_gatts_A_cb(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, e
 
 		default:
 
-			ESP_LOGI(SERVER_TAG,"GATT Event %d unhandled\n\n", event);
+			ESP_LOGE(SERVER_TAG,"GATT Event %d unhandled\n\n", event);
 
 		break;
 	}

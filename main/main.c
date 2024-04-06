@@ -86,6 +86,7 @@ const static char *TAG = "FALL_DETECTION:";
 
 
 QueueHandle_t data_queue;
+TaskHandle_t fall_detection_task_handle = NULL;
 
 
 
@@ -147,7 +148,6 @@ void fall_detection_task(void *pvParameter){
 
 
 	for(;;){ 
-
 		ble_attr_data_read(fall_detected);
 
 		//compute acceleration module and absolute value of its components
@@ -234,7 +234,7 @@ void fall_detection_task(void *pvParameter){
 
 	
 		
-		ble_attr_data_write(fall_detected);
+		
 		//print in the display
 		for (int j = 0; j < 8; j++)
 		{
@@ -273,7 +273,17 @@ void fall_detection_task(void *pvParameter){
 
     	SSD1306_UpdateScreen();
     	vTaskDelay(1000 / portTICK_PERIOD_MS);  
+
+		//update the characteristic value on the BLE server
+		ble_attr_data_write(fall_detected);
+		//the task waits until there is a reset from the client
+		if (fall_detected[0])
+		{
+			ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
     }
+		}
+		
+			
 }
 
 void app_main(void)
@@ -362,6 +372,6 @@ void app_main(void)
 	/////////////////////////////////////////////
  	
 
-	xTaskCreate(&fall_detection_task, "fall_detection_task", 1024*10, NULL, TASK_PRIORITY, NULL);
+	xTaskCreate(&fall_detection_task, "fall_detection_task", 1024*10, NULL, TASK_PRIORITY, &fall_detection_task_handle);
 	ESP_LOGI(TAG, "SCHEDULER: starting");
 }
