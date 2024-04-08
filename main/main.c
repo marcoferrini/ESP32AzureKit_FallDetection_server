@@ -129,8 +129,12 @@ void fall_detection_task(void *pvParameter){
 	
 	//setted to one when the fall is detected would be nice to put it at zero when in the client a button is pressed
 	uint8_t fall_detected[ATTR_VALUE_SIZE];
+
+	vTaskDelay(5000 / portTICK_PERIOD_MS);  
+	ESP_LOGI(TAG, "fall_detection_task started");
 	fall_detected[0] = 0;
 	ble_attr_data_write(fall_detected);
+
 
 	mag3110_mag_read(&magfx,&magfy,&magfz);
 	mag_mod = sqrt(pow(magfx,2) + pow(magfy,2) + pow(magfz,2)); 
@@ -149,7 +153,6 @@ void fall_detection_task(void *pvParameter){
 
 	for(;;){ 
 		ble_attr_data_read(fall_detected);
-
 		//compute acceleration module and absolute value of its components
     	mpu6050_accel_read(&accelx, &accely, &accelz);
 
@@ -274,8 +277,7 @@ void fall_detection_task(void *pvParameter){
     	SSD1306_UpdateScreen();
     	vTaskDelay(1000 / portTICK_PERIOD_MS);  
 
-		//update the characteristic value on the BLE server
-		ble_attr_data_write(fall_detected);
+		
 		//the task waits until there is a reset from the client
 		if (fall_detected[0])
 		{
