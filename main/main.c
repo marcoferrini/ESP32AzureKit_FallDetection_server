@@ -80,7 +80,10 @@ const static char *TAG = "FALL_DETECTION:";
 
 
 
-#define ACCEL_THRESHOLD						1.2   //in gs 
+#define ACCEL_THRESHOLD						1.5    //in gs 
+
+#define TEST_MODE 							1
+#define BLE_ON								1
 
 
 
@@ -133,7 +136,9 @@ void fall_detection_task(void *pvParameter){
 	vTaskDelay(5000 / portTICK_PERIOD_MS);  
 	ESP_LOGI(TAG, "fall_detection_task started");
 	fall_detected[0] = 0;
-	ble_attr_data_write(fall_detected);
+	#ifdef BLE_ON
+		ble_attr_data_write(fall_detected);
+	#endif
 
 
 	mag3110_mag_read(&magfx,&magfy,&magfz);
@@ -152,7 +157,9 @@ void fall_detection_task(void *pvParameter){
 
 
 	for(;;){ 
-		ble_attr_data_read(fall_detected);
+		#ifdef BLE_ON
+			ble_attr_data_read(fall_detected);
+		#endif
 		//compute acceleration module and absolute value of its components
     	mpu6050_accel_read(&accelx, &accely, &accelz);
 
@@ -214,76 +221,79 @@ void fall_detection_task(void *pvParameter){
 
 			if((angle_accel > ANGLE_THTRESHOLD)&&(angle_mag   > ANGLE_THTRESHOLD)){
 				fall_detected[0] = 1;
-				ble_attr_data_write(fall_detected);
+				#ifdef BLE_ON
+					ble_attr_data_write(fall_detected);
+				#endif
 			}
 			  
 		}
 
-		if (fall_detected[0])
-		{
-			SSD1306_GotoXY(8, 5);
-			SSD1306_Puts("       ", &Font_7x10, SSD1306_COLOR_WHITE);
-			SSD1306_GotoXY(8, 5);
-			SSD1306_Puts("fall detected", &Font_7x10, SSD1306_COLOR_WHITE);
-		} else
-		{
-			SSD1306_GotoXY(8, 5);
-			SSD1306_Puts("             ", &Font_7x10, SSD1306_COLOR_WHITE);
-			SSD1306_GotoXY(8, 5);
-			SSD1306_Puts("NO fall", &Font_7x10, SSD1306_COLOR_WHITE);
-		}
-		
-		
+		#ifdef TEST_MODE 
+			if (fall_detected[0])
+			{
+				SSD1306_GotoXY(8, 5);
+				SSD1306_Puts("       ", &Font_7x10, SSD1306_COLOR_WHITE);
+				SSD1306_GotoXY(8, 5);
+				SSD1306_Puts("fall detected", &Font_7x10, SSD1306_COLOR_WHITE);
+			} else
+			{
+				SSD1306_GotoXY(8, 5);
+				SSD1306_Puts("             ", &Font_7x10, SSD1306_COLOR_WHITE);
+				SSD1306_GotoXY(8, 5);
+				SSD1306_Puts("NO fall", &Font_7x10, SSD1306_COLOR_WHITE);
+			}
+
+			//print in the display
+			for (int j = 0; j < 8; j++)
+			{
+				print[j][14] = '0' + (print_array[j]%10);
+    			print[j][13] = '0' + (print_array[j]%100)/10;
+    			print[j][12] = '0' + (print_array[j]%1000)/100;
+    			print[j][11] = '.';
+    			print[j][10] = '0' + (print_array[j]%10000)/1000;
+    			print[j][9] = '0' + (print_array[j])/10000;
+    			while (print[j][9] == '0' && print[j][10] != '.'){
+    				for (int i=9; i<=13;i++){
+    					print[j][i] = print[j][i+1];
+    				}
+    				print[j][14] = ' ';
+    			}
+
+				if (j<4)
+				{
+					SSD1306_GotoXY(8, 20+j*10);
+    				SSD1306_Puts(print[j], &Font_7x10, SSD1306_COLOR_WHITE);
+				}
 
 	
-		
-		
-		//print in the display
-		for (int j = 0; j < 8; j++)
-		{
-			print[j][14] = '0' + (print_array[j]%10);
-    		print[j][13] = '0' + (print_array[j]%100)/10;
-    		print[j][12] = '0' + (print_array[j]%1000)/100;
-    		print[j][11] = '.';
-    		print[j][10] = '0' + (print_array[j]%10000)/1000;
-    		print[j][9] = '0' + (print_array[j])/10000;
-    		while (print[j][9] == '0' && print[j][10] != '.'){
-    			for (int i=9; i<=13;i++){
-    				print[j][i] = print[j][i+1];
-    			}
-    			print[j][14] = ' ';
-    		}
-
-			if (j<4)
-			{
-				SSD1306_GotoXY(8, 20+j*10);
-    			SSD1306_Puts(print[j], &Font_7x10, SSD1306_COLOR_WHITE);
 			}
-			
-    		
-		}
-		//print to the terminal the magnetic field
-		ESP_LOGW(TAG, "MAG measurement");
-		ESP_LOGI(TAG, "magx = %f", magfx);
-		ESP_LOGI(TAG, "magy = %f", magfy);
-		ESP_LOGI(TAG, "magz = %f", magfz);
-		ESP_LOGI(TAG, "mag module = %f", mag_mod);
+			SSD1306_UpdateScreen();
+			//print to the terminal the magnetic field
+			ESP_LOGW(TAG, "MAG measurement");
+			ESP_LOGI(TAG, "magx = %f", magfx);
+			ESP_LOGI(TAG, "magy = %f", magfy);
+			ESP_LOGI(TAG, "magz = %f", magfz);
+			ESP_LOGI(TAG, "mag module = %f", mag_mod);
 
+		#endif
+		
 		//ESP_LOGW(TAG, "ACCEL measurement");
 		//ESP_LOGI(TAG, "accx = %f", accelx);
 		//ESP_LOGI(TAG, "accy = %f", accely);
 		//ESP_LOGI(TAG, "accz = %f", accelz);
 
-    	SSD1306_UpdateScreen();
-    	vTaskDelay(1000 / portTICK_PERIOD_MS);  
+    	
+    	vTaskDelay(500 / portTICK_PERIOD_MS);  
 
 		
 		//the task waits until there is a reset from the client
-		if (fall_detected[0])
-		{
-			ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-    }
-		}
+		#ifdef BLE_ON
+			if (fall_detected[0])
+			{
+				ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+    		}
+		#endif
+	}
 		
 			
 }
@@ -292,7 +302,7 @@ void app_main(void)
 {
 
 	/////////////////////////////////////////////
-	//SENSORS SETUP
+	//peripheral config
 	//
 	/////////////////////////////////////////////
 	data_queue = xQueueCreate(1, sizeof(uint8_t)); 
@@ -307,6 +317,11 @@ void app_main(void)
     SSD1306_Init();
 	vTaskDelay(1000/portTICK_PERIOD_MS);
 	SSD1306_Fill(SSD1306_COLOR_BLACK);
+
+	/////////////////////////////////////////////
+	//sensor config
+	//
+	/////////////////////////////////////////////
 
 	//Resetting the offset for the magnetic sensor 
 	ESP_ERROR_CHECK(mag3110_register_write_byte(MAG3110_OFF_X_MSB_REG,0x00));
@@ -324,10 +339,12 @@ void app_main(void)
 	//mag3110 offset correction
 	ESP_LOGI(TAG, "start mag3110 calibration");
 	SSD1306_GotoXY(8, 5);
-	SSD1306_Puts("start mag3110 calibration", &Font_7x10, SSD1306_COLOR_WHITE);
+	SSD1306_Puts("calibrating...", &Font_7x10, SSD1306_COLOR_WHITE);
 	SSD1306_UpdateScreen();
 	mag3110_calibrating();
 	ESP_LOGI(TAG, "mag3110 calibrated");
+	SSD1306_GotoXY(8, 5);
+	SSD1306_Puts("                  ", &Font_7x10, SSD1306_COLOR_WHITE);
 	SSD1306_Puts("mag3110 calibrated", &Font_7x10, SSD1306_COLOR_WHITE);
 	SSD1306_UpdateScreen();
 
@@ -340,34 +357,34 @@ void app_main(void)
 	//BLE SETUP
 	//
 	/////////////////////////////////////////////
+	#ifdef BLE_ON
+		// Initialize NVS.
+		ESP_ERROR_CHECK(nvs_flash_init());	
 
-	// Initialize NVS.
-	ESP_ERROR_CHECK(nvs_flash_init());	
+		//bluetooth config
+		esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
+		ESP_ERROR_CHECK(esp_bt_controller_init(&bt_cfg));
+		ESP_ERROR_CHECK(esp_bt_controller_enable(ESP_BT_MODE_BLE));
 
-	//bluetooth config
-	esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
-	ESP_ERROR_CHECK(esp_bt_controller_init(&bt_cfg));
-	ESP_ERROR_CHECK(esp_bt_controller_enable(ESP_BT_MODE_BLE));
+		//bluedroid config
+		//esp_bluedroid_config_t bluedroid_cfg = BT_BLUEDROID_INIT_CONFIG_DEFAULT();
+		ESP_ERROR_CHECK(esp_bluedroid_init());
+		ESP_ERROR_CHECK( esp_bluedroid_enable());
 
-	//bluedroid config
-	//esp_bluedroid_config_t bluedroid_cfg = BT_BLUEDROID_INIT_CONFIG_DEFAULT();
-	ESP_ERROR_CHECK(esp_bluedroid_init());
-	ESP_ERROR_CHECK( esp_bluedroid_enable());
-
-	//GAP and GATTS event handlers registration
-	ESP_ERROR_CHECK(esp_ble_gatts_register_callback(esp_gatts_cb));
-	ESP_ERROR_CHECK(esp_ble_gap_register_callback(esp_gap_cb));
+		//GAP and GATTS event handlers registration
+		ESP_ERROR_CHECK(esp_ble_gatts_register_callback(esp_gatts_cb));
+		ESP_ERROR_CHECK(esp_ble_gap_register_callback(esp_gap_cb));
 
 
-	ESP_ERROR_CHECK(esp_ble_gap_set_device_name("IOT_SERVER"));
-	ESP_ERROR_CHECK(esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV,ESP_PWR_LVL_N12));
-	ESP_ERROR_CHECK(esp_ble_gatts_app_register(PROFILE_A_APP_ID));
+		ESP_ERROR_CHECK(esp_ble_gap_set_device_name("IOT_SERVER"));
+		ESP_ERROR_CHECK(esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT,ESP_PWR_LVL_P9));
+		ESP_ERROR_CHECK(esp_ble_gatts_app_register(PROFILE_A_APP_ID));
 	
-	esp_err_t local_mtu_ret = esp_ble_gatt_set_local_mtu(500);
-    if (local_mtu_ret){
-        ESP_LOGE(TAG, "set local  MTU failed, error code = %x", local_mtu_ret);
-    }
-
+	//esp_err_t local_mtu_ret = esp_ble_gatt_set_local_mtu(500);
+    //if (local_mtu_ret){
+    //    ESP_LOGE(TAG, "set local  MTU failed, error code = %x", local_mtu_ret);
+    //}
+	#endif
 	/////////////////////////////////////////////
 	//TASK CREATION
 	//

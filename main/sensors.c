@@ -132,9 +132,9 @@ void mpu6050_accel_read(float *accelx, float *accely, float *accelz) {
 		*accelz = *accelz/16384; 
 		
 	} else{
-		*accelx = 0; 
-		*accely = 0;
-		*accelz = 0;
+		*accelx = 3; 
+		*accely = 3;
+		*accelz = 3;
 	}
 	
 	return;
@@ -275,7 +275,7 @@ void btn_cb() {
 	uint8_t tmp = 0; 
 	ESP_LOGI(TAG1,"User defines button was pushed");
     reset_accel ^= 1;		
-	ESP_LOGI(TAG1, "reset_accel = %d", reset_accel);
+	ESP_LOGI(TAG1, "simulated falling = %d", reset_accel);
 	if(!uxQueueSpacesAvailable(data_queue)){
 		xQueueReceive(data_queue,&tmp, 0);
 	} 
