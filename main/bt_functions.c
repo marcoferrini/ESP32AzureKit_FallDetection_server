@@ -1,5 +1,6 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <string.h>
 #include "freertos/event_groups.h"
 
 #include "nvs_flash.h"
@@ -79,8 +80,8 @@ static uint8_t adv_service_uuid128[32] = {
 
 static esp_ble_adv_params_t ble_adv_params = {
 
-	.adv_int_min = 0x20,
-	.adv_int_max = 0x40,
+	.adv_int_min = 0x640,   //0x20 before modem-sleep mode
+	.adv_int_max = 0x640,   //0x40 before modem-sleep mode
 	.adv_type = ADV_TYPE_IND,
 	.own_addr_type  = BLE_ADDR_TYPE_PUBLIC,
 	.channel_map = ADV_CHNL_ALL,
@@ -174,6 +175,17 @@ static void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *par
 			ESP_LOGI(SERVER_TAG,"ESP_GAP_BLE_ADV_START_COMPLETE_EVT\n");
 
 		break;
+
+
+		case ESP_GAP_BLE_UPDATE_CONN_PARAMS_EVT:
+			ESP_LOGI(SERVER_TAG,"ESP_GAP_BLE_UPDATE_CONN_PARAMS_EVT\n");
+             if (param->update_conn_params.status != ESP_BT_STATUS_SUCCESS) {
+                 
+				 ESP_LOGE(SERVER_TAG, "Update connection parameters failed\n");
+             } else {
+                 ESP_LOGI(SERVER_TAG, "Update connection parameters success\n");
+             }
+        break;
 
 		case ESP_GAP_BLE_ADV_STOP_COMPLETE_EVT:
 
@@ -304,6 +316,17 @@ static void esp_gatts_A_cb(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, e
 	    	ESP_LOGI(SERVER_TAG,"ESP_GATTS_CONNECT_EVT \n");
 
 	        gl_profile_tab[PROFILE_A_APP_ID].conn_id = param->connect.conn_id;
+
+			esp_ble_conn_update_params_t conn_params = {
+                .min_int    = 0x50,  // Min int
+                .max_int    = 0x70,  // Max int
+                .latency    = 0,
+                .timeout    = 400,
+                .bda    = {0},   // Address of the connected device
+            };
+            memcpy(conn_params.bda, param->connect.remote_bda, sizeof(esp_bd_addr_t));
+            esp_ble_gap_update_conn_params(&conn_params);
+
 	        ESP_ERROR_CHECK(esp_ble_gap_stop_advertising());
 
 		break;

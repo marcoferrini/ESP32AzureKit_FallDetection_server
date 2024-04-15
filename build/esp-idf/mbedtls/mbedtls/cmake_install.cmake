@@ -39,8 +39,8 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for each subdirectory.
-  include("C:/Users/marco/eclipse-workspace/Progetto/build/esp-idf/mbedtls/mbedtls/library/cmake_install.cmake")
-  include("C:/Users/marco/eclipse-workspace/Progetto/build/esp-idf/mbedtls/mbedtls/include/cmake_install.cmake")
+  include("C:/Users/marco/eclipse-workspace/fall_detection_server/build/esp-idf/mbedtls/mbedtls/library/cmake_install.cmake")
+  include("C:/Users/marco/eclipse-workspace/fall_detection_server/build/esp-idf/mbedtls/mbedtls/include/cmake_install.cmake")
 
 endif()
 

@@ -1,4 +1,4 @@
-# Install script for directory: C:/Users/marco/eclipse-workspace/Progetto/main
+# Install script for directory: C:/Users/marco/eclipse-workspace/fall_detection_server/main
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)

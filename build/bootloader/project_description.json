@@ -1,8 +1,8 @@
 {
     "project_name":       "bootloader",
     "project_path":       "C:/Users/marco/eclipse-workspace/espressif/esp-idf-v4.4/esp-idf-v4.4/components/bootloader/subproject",
-    "build_dir":          "C:/Users/marco/eclipse-workspace/Progetto/build/bootloader",
-    "config_file":        "C:/Users/marco/eclipse-workspace/Progetto/sdkconfig",
+    "build_dir":          "C:/Users/marco/eclipse-workspace/fall_detection_server/build/bootloader",
+    "config_file":        "C:/Users/marco/eclipse-workspace/fall_detection_server/sdkconfig",
     "config_defaults":    "",
     "app_elf":            "bootloader.elf",
     "app_bin":            "bootloader.bin",

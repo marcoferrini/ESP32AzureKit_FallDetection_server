@@ -133,7 +133,7 @@ void fall_detection_task(void *pvParameter){
 	//setted to one when the fall is detected would be nice to put it at zero when in the client a button is pressed
 	uint8_t fall_detected[ATTR_VALUE_SIZE];
 
-	vTaskDelay(5000 / portTICK_PERIOD_MS);  
+	vTaskDelay(10000 / portTICK_PERIOD_MS);  
 	ESP_LOGI(TAG, "fall_detection_task started");
 	fall_detected[0] = 0;
 	#ifdef BLE_ON
@@ -377,7 +377,7 @@ void app_main(void)
 
 
 		ESP_ERROR_CHECK(esp_ble_gap_set_device_name("IOT_SERVER"));
-		ESP_ERROR_CHECK(esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT,ESP_PWR_LVL_P9));
+		ESP_ERROR_CHECK(esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT,ESP_PWR_LVL_N12));
 		ESP_ERROR_CHECK(esp_ble_gatts_app_register(PROFILE_A_APP_ID));
 	
 	//esp_err_t local_mtu_ret = esp_ble_gatt_set_local_mtu(500);

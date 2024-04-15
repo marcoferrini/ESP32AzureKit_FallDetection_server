@@ -1,4 +1,4 @@
-/* * Data converted from C:/Users/marco/eclipse-workspace/Progetto/build/esp-idf/mbedtls/x509_crt_bundle
+/* * Data converted from C:/Users/marco/eclipse-workspace/fall_detection_server/build/esp-idf/mbedtls/x509_crt_bundle
  */
 .data
 .section .rodata.embedded
