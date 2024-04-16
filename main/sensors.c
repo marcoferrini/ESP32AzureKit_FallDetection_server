@@ -169,9 +169,9 @@ void mpu6050_accel_read(float *accelx, float *accely, float *accelz) {
 		*accelz = *accelz/16384; 
 		
 	} else{
-		*accelx = 3; 
-		*accely = 3;
-		*accelz = 3;
+		*accelx = 0; 
+		*accely = 0;
+		*accelz = 0.1;
 	}
 	
 	return;

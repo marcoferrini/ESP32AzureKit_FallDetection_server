@@ -64,7 +64,7 @@ const static char *TAG = "FALL_DETECTION:";
 
 
 
-#define ACCEL_THRESHOLD						1.5    //in gs 
+#define ACCEL_THRESHOLD						0.6    //in gs 
 
 #define TEST_MODE 							1
 #define BLE_ON								1
@@ -175,8 +175,8 @@ void fall_detection_task(void *pvParameter){
 		print_array[4] = mag_mod;
 		  
 		
-		//detect the impact
-		if((accel_mod > ACCEL_THRESHOLD*1000)) {
+		//detect the fall
+		if((accel_mod < ACCEL_THRESHOLD*1000)) {
 			angle_accel = 0; 
 			angle_mag = 0; 
 
