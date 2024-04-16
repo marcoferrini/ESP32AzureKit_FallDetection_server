@@ -1,11 +1,18 @@
-ESP-IDF template app
-====================
+# ESP32AzureKit_FallDetection_client
 
-This is a template application to be used with [Espressif IoT Development Framework](https://github.com/espressif/esp-idf).
+Fall detection system based on ESP32 Azure IoT kit. 
+This repository is the esp-idf project forlder used to develop the server of the fall detection system.
 
-Please check [ESP-IDF docs](https://docs.espressif.com/projects/esp-idf/en/latest/get-started/index.html) for getting started instructions.
+## Source code
+The main folder contains the sorce code.
 
-*Code in this repository is in the Public Domain (or CC0 licensed, at your option.)
-Unless required by applicable law or agreed to in writing, this
-software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-CONDITIONS OF ANY KIND, either express or implied.*
+- `main.c` contains main task and fall detection task 
+- `sensors.c` constains the i2c config functions and the function to interface the magnetometer and the accelerometer
+- `bt_functions.c` contains the BLE gatt and gap functions
+- `button.c` API for user-defined button
+- `ssd1306.c` API for esp32 azure iot kit display ssd1306
+- `fonts.c` structures definition for ssd1306
+
+
+## Author 
+Marco Ferrini
