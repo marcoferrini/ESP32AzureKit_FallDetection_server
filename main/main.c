@@ -274,7 +274,7 @@ void fall_detection_task(void *pvParameter){
 		//ESP_LOGI(TAG, "accz = %f", accelz);
 
     	
-    	vTaskDelay(200 / portTICK_PERIOD_MS);  
+    	vTaskDelay(50 / portTICK_PERIOD_MS);  
 
 		
 		//the task waits until there is a reset from the client
