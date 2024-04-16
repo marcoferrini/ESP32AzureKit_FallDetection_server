@@ -122,6 +122,13 @@ static esp_ble_adv_data_t scan_rsp_data = {
     .flag = (ESP_BLE_ADV_FLAG_GEN_DISC | ESP_BLE_ADV_FLAG_BREDR_NOT_SPT),
 };
 
+/**
+ * @brief Write data to a BLE characteristic.
+ * 
+ * This function writes a byte array to a specific BLE characteristic defined in the profile.
+ * 
+ * @param value Pointer to the data to be written.
+ */
 void ble_attr_data_write(uint8_t* value){
 
      // Check if newVal pointer is not NULL
@@ -136,6 +143,13 @@ void ble_attr_data_write(uint8_t* value){
 	return;
 }
 
+/**
+ * @brief Read data from a BLE characteristic.
+ * 
+ * This function reads the current value of a specific BLE characteristic defined in the profile.
+ * 
+ * @param value Pointer to store the read value.
+ */
 void ble_attr_data_read( uint8_t* value){
     uint16_t len = 0;
 	const uint8_t *char1_val_aux = NULL;
@@ -152,6 +166,15 @@ void ble_attr_data_read( uint8_t* value){
 	return;
 }
 
+/**
+ * @brief Callback function for handling BLE GAP events.
+ * 
+ * This function handles various GAP events, such as advertising data set completion,
+ * advertisement start completion, and connection parameter updates.
+ * 
+ * @param event Type of GAP event.
+ * @param param Pointer to parameter union holding event-specific data.
+ */
 static void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param){	//Funzione chiamata dal driver bluetooth ogni volta che si verifica un evento
 
 	switch (event) {
@@ -201,6 +224,16 @@ static void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *par
 	}
 }
 
+/**
+ * @brief Callback function for handling BLE GATT server events.
+ * 
+ * This function manages events related to the GATT server, such as registration,
+ * service creation, and characteristic operations.
+ * 
+ * @param event Type of GATT server event.
+ * @param gatts_if GATT interface, identifying the server instance.
+ * @param param Pointer to parameter union holding event-specific data.
+ */
 static void esp_gatts_cb(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param)
 {
     /* If event is register event, store the gatts_if for each profile */
@@ -225,6 +258,16 @@ static void esp_gatts_cb(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp
 	}
 }
 
+/**
+ * @brief Profile A specific GATT server callback.
+ * 
+ * Handles specific GATT server events for Profile A, such as registration, service start, and
+ * characteristic addition.
+ * 
+ * @param event GATT server event type.
+ * @param gatts_if GATT server interface for the event.
+ * @param param Pointer to parameter union for the event.
+ */
 static void esp_gatts_A_cb(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param){
 	switch (event) {
 		case ESP_GATTS_REG_EVT:

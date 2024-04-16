@@ -28,25 +28,9 @@
 #include "iot_button.h"
 #include "sensors.c"
 
-
-
-
-//ATTENZIONE in questo modo mostro i moduli delle componenti delle accelerazioni sui tre assi 
-
-
-//TODO aggiungere un bottonwe e piu schermate nel display 
-//TODO non ha molto senso usare sia accelx che magfx, potrei usare un'unica variabile per entrambi i campi 
-//TODO al momento leggo i dati dal magnetometro con un frequenza molto maggiore di quella necessaria, questo mi fa perdere in efficienza energetica 
-//TODO potrei leggere le componenti del campo magnetico con un unica lettura consecutiva, lo stesso potrebbe essere fatto anche per l'accelerometro
-//TODO imparare ad utiliazzare il bottone per switchare fra le due pagine del display 
-//TODO la calibrazione andrebbe fatta ogni tot secondi un possibile modo per implementare questo comportamento è un nested for loop 
-//o forse ha senso anche fare la calibrazione ad ogni ciclo for quando si è sicuri che non si è avuta una caduta, pero' visto che l'accelerometro ha un certo ritardo a rilevare la caduta è meglio aggiornare la direzione di g standing una volta ogni tanto
-//TODO per il debug potresti fare usare un bottone per mettere a zero le componenti dell'accelerazione
-
-
 const static char *TAG = "FALL_DETECTION:";
 
-//TASk
+//TASK
 #define TASK_PRIORITY				5
 
 //Angle threshold to detect a fall
@@ -108,7 +92,14 @@ static char print[8][16] = { "|Acc|  =   .    ",
 
 
 
-
+/**
+ * @brief Task to monitor accelerometer and magnetometer data for fall detection.
+ *
+ * This task reads from accelerometer and magnetometer sensors to determine if a fall has occurred
+ * based on computed angles and thresholds. Detected falls can trigger BLE notifications if configured.
+ *
+ * @param pvParameter Pointer to task parameter, not used in this task.
+ */
 void fall_detection_task(void *pvParameter){
 	float accelx;
 	float accely;
@@ -298,6 +289,12 @@ void fall_detection_task(void *pvParameter){
 			
 }
 
+/**
+ * @brief Main entry point for the ESP32 application.
+ *
+ * Initializes the system peripherals, sets up the I2C communication, configures display and sensors,
+ * initializes BLE functionality if enabled, and starts the fall detection task.
+ */
 void app_main(void)
 {
 

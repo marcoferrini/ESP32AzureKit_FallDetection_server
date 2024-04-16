@@ -68,6 +68,15 @@ static button_handle_t btn_handle = NULL;
 ///////////////////////////////////////////////////
 static i2c_config_t i2c_conf;
 
+/**
+ * @brief Initializes the I2C master.
+ *
+ * Sets up the I2C master configuration on the designated GPIO pins with pull-up resistors enabled.
+ * It configures the I2C communication speed and initializes the I2C driver for the master controller.
+ *
+ * @return esp_err_t Returns ESP_OK if initialization is successful, otherwise it returns an error code indicating what went wrong during initialization.
+ */
+
 static esp_err_t i2c_master_init(void)
 {
     int i2c_master_port = I2C_MASTER_NUM;
@@ -90,11 +99,31 @@ static esp_err_t i2c_master_init(void)
 //
 ///////////////////////////////////////////////////
 
+
+/**
+ * @brief Read a register from the MPU6050 accelerometer.
+ * 
+ * This function initiates a read operation from a specified register address of the MPU6050 sensor using I2C.
+ * 
+ * @param reg_addr Address of the register to read from.
+ * @param data Buffer to store the read data.
+ * @param len Number of bytes to read.
+ * @return esp_err_t Result of the I2C read operation.
+ */
 static esp_err_t mpu6050_register_read(uint8_t reg_addr, uint8_t *data, size_t len)
 {
     return i2c_master_write_read_device(I2C_MASTER_NUM, MPU6050_SENSOR_ADDR, &reg_addr, 1, data, len, I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS);
 }
 
+/**
+ * @brief Write a byte to a register of the MPU6050 accelerometer.
+ * 
+ * This function writes a single byte to a specified register of the MPU6050 sensor using I2C.
+ * 
+ * @param reg_addr Address of the register to write to.
+ * @param data Byte to write.
+ * @return esp_err_t Result of the I2C write operation.
+ */
 static esp_err_t mpu6050_register_write_byte(uint8_t reg_addr, uint8_t data)
 {
     int ret;
@@ -105,7 +134,15 @@ static esp_err_t mpu6050_register_write_byte(uint8_t reg_addr, uint8_t data)
     return ret;
 }
 
-//ACCELERATION reading function
+/**
+ * @brief Read accelerometer data from MPU6050.
+ * 
+ * This function reads the X, Y, and Z accelerometer data from MPU6050 and converts them to 'g' force values.
+ * 
+ * @param accelx Pointer to store the X-axis acceleration.
+ * @param accely Pointer to store the Y-axis acceleration.
+ * @param accelz Pointer to store the Z-axis acceleration.
+ */
 void mpu6050_accel_read(float *accelx, float *accely, float *accelz) {
 	
 	uint8_t data[2];
@@ -145,11 +182,30 @@ void mpu6050_accel_read(float *accelx, float *accely, float *accelz) {
 //
 ///////////////////////////////////////////////////
 
+/**
+ * @brief Read a register from the MAG3110 magnetometer.
+ * 
+ * This function initiates a read operation from a specified register address of the MAG3110 sensor using I2C.
+ * 
+ * @param reg_addr Address of the register to read from.
+ * @param data Buffer to store the read data.
+ * @param len Number of bytes to read.
+ * @return esp_err_t Result of the I2C read operation.
+ */
 static esp_err_t mag3110_register_read(uint8_t reg_addr, uint8_t *data, size_t len)
 {
     return i2c_master_write_read_device(I2C_MASTER_NUM, MAG3110_SENSOR_ADDR, &reg_addr, 1, data, len, I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS);
 }
 
+/**
+ * @brief Write a byte to a register of the MAG3110 magnetometer.
+ * 
+ * This function writes a single byte to a specified register of the MAG3110 sensor using I2C.
+ * 
+ * @param reg_addr Address of the register to write to.
+ * @param data Byte to write.
+ * @return esp_err_t Result of the I2C write operation.
+ */
 static esp_err_t mag3110_register_write_byte(uint8_t reg_addr, uint8_t data)
 {
     int ret;
@@ -158,6 +214,15 @@ static esp_err_t mag3110_register_write_byte(uint8_t reg_addr, uint8_t data)
     return ret;
 }
 
+/**
+ * @brief Read magnetometer data from MAG3110.
+ * 
+ * This function reads the X, Y, and Z magnetometer data from MAG3110 and stores them as float values.
+ * 
+ * @param magfx Pointer to store the X-axis magnetic field.
+ * @param magfy Pointer to store the Y-axis magnetic field.
+ * @param magfz Pointer to store the Z-axis magnetic field.
+ */
 void mag3110_mag_read(float *magfx, float *magfy, float *magfz){
 
 	uint8_t data[2];
@@ -180,7 +245,12 @@ void mag3110_mag_read(float *magfx, float *magfy, float *magfz){
 	return; 
 }
 
-
+/**
+ * @brief Calibrate the MAG3110 magnetometer.
+ * 
+ * This function performs a calibration routine for the MAG3110 by determining offset values for each axis
+ * to ensure accurate readings in subsequent operations.
+ */
 void mag3110_calibrating(){
 	bool changed = false;
 	float magfx;
@@ -270,7 +340,13 @@ void mag3110_calibrating(){
 //
 ///////////////////////////////////////////////////
 
-//call back that toggle the value of a variable
+/**
+ * @brief Callback function for a button press.
+ *
+ * This function is called when a user-defined button is pressed. It is used to simulate
+ * a fall. 
+ */
+
 void btn_cb() {
 	uint8_t tmp = 0; 
 	ESP_LOGI(TAG1,"User defines button was pushed");
@@ -283,6 +359,13 @@ void btn_cb() {
 	return; 		
 }
 
+/**
+ * @brief Initializes the button used in the application.
+ *
+ * This function sets up a button on a specified GPIO pin using the IoT Button library. 
+ * It logs the start and completion of the initialization process, and sets a callback function
+ * to handle button tap events.
+ */
 void button_init(){
 	ESP_LOGI(TAG1, "STARTED: button initialization"); 
 	btn_handle = iot_button_create((gpio_num_t)BUTTON_IO_NUM, BUTTON_ACTIVE_LEVEL);
